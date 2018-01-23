@@ -24,7 +24,7 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 	//   x, y, theta and their uncertainties from GPS) and all weights to 1.
 	// Add random Gaussian noise to each particle.
 	// NOTE: Consult particle_filter.h for more information about this method (and others in this file).
-	num_particles = 10;
+	num_particles = 30;
 	// std[0] == x uncertainty
 	// std[1] == y uncertainty
 	// std[2] == theta uncertainty
@@ -48,7 +48,6 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 
 	is_initialized = true;
 
-	std::cout << particles.size() << endl;
 }
 
 void ParticleFilter::prediction(double delta_t, double std_pos[], double velocity, double yaw_rate) {
@@ -75,25 +74,29 @@ void ParticleFilter::prediction(double delta_t, double std_pos[], double velocit
 	// x += (velocity/yaw_rate) * (sin(theta + yaw_rate * delta_t) - sin(theta))
 	// y += (velocity/yaw_rate) * (cos(theta) - cos(theta + yaw_rate * delta_t))
 	// theta += yaw_rate * delta_t
-	if (yaw_rate < 0.000001 && yaw_rate > -0.0000001){
+	// TODO: Reorganize this to make it more efficient.
+	if (yaw_rate < 0.001 && yaw_rate > -0.001){
 		// yaw_rate == 0
 		for (int i = 0; i < num_particles; i++) {
-			particles[i].x += velocity * delta_t * cos(particles[i].theta)
-												+ distribution_x(generator);
-			particles[i].y += velocity * delta_t * sin(particles[i].theta)
-												+ distribution_y(generator);
-			particles[i].theta += distribution_theta(generator);
+			particles[i].x += velocity * delta_t * cos(particles[i].theta);
+			particles[i].y += velocity * delta_t * sin(particles[i].theta);
 		}
 	} else {
 		// yaw_rate != 0
 		for (int i = 0; i < num_particles; i++) {
-			particles[i].x += distribution_x(generator) + (velocity/yaw_rate) * (
+			particles[i].x +=  (velocity/yaw_rate) * (
 				sin(particles[i].theta + yaw_rate * delta_t) - sin(particles[i].theta)
 			);
-			particles[i].y += distribution_y(generator) + (velocity/yaw_rate) * (
+
+			particles[i].y +=  (velocity/yaw_rate) * (
 				cos(particles[i].theta) - cos(particles[i].theta + yaw_rate * delta_t)
 			);
-			particles[i].theta += yaw_rate * delta_t + distribution_theta(generator);
+			particles[i].theta += yaw_rate * delta_t;// + distribution_theta(generator);
+		}
+		for (int i = 0; i < num_particles; i++) {
+			//particles[i].x += distribution_x(generator);
+			//particles[i].y += distribution_y(generator);
+			//particles[i].theta += distribution_theta(generator);
 		}
 	}
 
@@ -116,9 +119,10 @@ void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::ve
 	//				if prediction is closer to landmarks, closest is i
 
 	// for every LandmarkObs in observations:
-	double distance, temp_distance = 300.0;
-	int current_match = 0;
+	double distance, temp_distance;
 	for (int i = 0; i < observations.size(); i++) {
+		int current_match = 0;
+		distance, temp_distance = 300;
 		for (int j = 0; j < predicted.size(); j++) {
 			temp_distance = sqrt(pow(observations[i].x - predicted[j].x, 2.0)
 										+ pow(observations[i].y - predicted[j].y, 2.0));
@@ -126,8 +130,8 @@ void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::ve
 				current_match = j;
 			}
 		}
-		observations[i].id = current_match;
-		predicted.erase(predicted.begin() + current_match);
+		observations[i].id = predicted[current_match].id - 1;
+		//predicted.erase(predicted.begin() + current_match);
 	}
 
 }
@@ -151,20 +155,18 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 	// y_map = y_part + np.sin(theta) * x_obs) + (np.cos(theta) * y_obs)
 
 	// Variables for calculating probability.
-	double distance, t_val, base, expon;
+
+	double distance, t_val, gauss_norm, expon;
 	weights.clear();
 	std::vector<LandmarkObs> car_observations;// Make a list of landmarks from the map to pass to dataAssociation.
 	std::vector<LandmarkObs> map_observations;
   for (int i = 0; i < num_particles; i++) {
 		// For every particle, convert the observed landmarks to map space.
 		car_observations.clear();
+		map_observations.clear();
 		for (int j = 0; j < observations.size(); j++) {
 			car_observations.push_back(LandmarkObs());
 
-		  std::cout << car_observations.size() << endl;
-		  std::cout << j << endl;
-		  std::cout << particles.size() << endl;
-			std::cout << particles[i].x << endl;
 			car_observations[j].x = particles[i].x;
 															+ (cos(particles[i].theta) * observations[j].x)
 															- (sin(particles[i].theta) * observations[j].y);
@@ -174,7 +176,6 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 															+ (cos(particles[i].theta) * observations[j].y);
 		}
 
-		map_observations.clear();
 		for (int j = 0; j < map_landmarks.landmark_list.size(); j++) {
 			distance = sqrt(pow(map_landmarks.landmark_list[j].x_f
 													- particles[i].x, 2.0)
@@ -188,8 +189,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 			}
 		}
 		// Associate landmarks with observations.
-		  std::cout << car_observations.size() << endl;
-		if (map_observations.size() <= car_observations.size()) {
+		if (map_observations.size() < car_observations.size()) {
 			weights.push_back(0.0);
 		} else {
 			dataAssociation(map_observations, car_observations);
@@ -198,19 +198,16 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 			double s = 1.0;
 			for (int j = 0; j < car_observations.size(); j++) {
 
-				  std::cout << car_observations[j].id << endl;
-				base = 1.0/(2.0 * M_PI * std_landmark[0] * std_landmark[1]);
-				expon = - (pow(car_observations[j].x - map_landmarks
-																								.landmark_list[
+				gauss_norm = 1.0/(2.0 * M_PI * std_landmark[0] * std_landmark[1]);
+				expon = (pow(car_observations[j].x - map_landmarks.landmark_list[
 																									car_observations[j].id]
 																								.x_f, 2.0)
 								  / (2.0 * pow(std_landmark[0], 2.0)))
-								+ (pow(car_observations[j].y - map_landmarks
-																								.landmark_list[
+								+ (pow(car_observations[j].y - map_landmarks.landmark_list[
 																									car_observations[j].id]
 																								.y_f, 2.0)
 									/ (2.0 * pow(std_landmark[1], 2.0)));
-				t_val = base * exp(expon);
+				t_val = gauss_norm * exp(-expon);
 				s *= t_val;
 
 			}
@@ -234,11 +231,8 @@ void ParticleFilter::resample() {
 	std::vector<Particle> temp_vec;
 	int sample;
 	for (int i = 0; i < num_particles; i++) {
-		temp_vec.push_back(Particle());
 		sample = distribution(generator);
-		temp_vec[i].x = particles[sample].x;
-		temp_vec[i].y = particles[sample].y;
-		temp_vec[i].theta = particles[sample].theta;
+		temp_vec.push_back(particles[sample]);
 	}
 	particles = temp_vec;
 }
