@@ -125,25 +125,18 @@ void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::ve
 		int current_match = 0;
 		distance = 500.0;
 		temp_distance = 500.0;
-		cout << "Distance: " << distance << endl;
-		cout<< i << endl;
 		for (int j = 0; j < predicted.size(); j++) {
-
-			cout << "(" << temp_distance << ", " << distance << ")" << endl;
 
 			temp_distance = dist(observations[i].x,
 													 observations[i].y,
 													 predicted[j].x,
 													 predicted[j].y);
-			cout << "(" << temp_distance << ", " << distance << ")" << endl;
 			if (temp_distance < distance) {
 				current_match = predicted[j].id - 1;
 				distance = temp_distance;
 			}
 		}
-		cout << "test" << endl;
 		observations[i].id = current_match;
-		cout << observations[i].id << endl;
 		//predicted.erase(predicted.begin() + current_match);
 	}
 
@@ -213,8 +206,6 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 			// Calculate the particle's final weight.
 
 			for (int j = 0; j < car_observations.size(); j++) {
-				std:: cout << "(" << car_observations[j].x << ", " << car_observations[j].y << ") (" << map_landmarks.landmark_list[car_observations[j].id].x_f << ", " << map_landmarks.landmark_list[car_observations[j].id].y_f << ")" << endl;
-
 				gauss_norm = 1.0/(2.0 * M_PI * std_landmark[0] * std_landmark[1]);
 				expon = (pow(car_observations[j].x - map_landmarks.landmark_list[
 																									car_observations[j].id]
@@ -228,12 +219,10 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 				s *= t_val;
 
 
-				std::cout << "One observation end" << endl;
 			}
 		}
 		particles[i].weight = s;
 		weights.push_back(s);
-		std::cout << "One particle end" << endl;
 	}
 
 
