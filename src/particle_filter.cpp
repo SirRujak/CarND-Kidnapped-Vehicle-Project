@@ -24,7 +24,7 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 	//   x, y, theta and their uncertainties from GPS) and all weights to 1.
 	// Add random Gaussian noise to each particle.
 	// NOTE: Consult particle_filter.h for more information about this method (and others in this file).
-	num_particles = 30;
+	num_particles = 10;
 	// std[0] == x uncertainty
 	// std[1] == y uncertainty
 	// std[2] == theta uncertainty
@@ -44,6 +44,7 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 		particles[i].y = distribution_y(generator);
 		particles[i].theta = distribution_theta(generator);
 		particles[i].weight = 1.0/num_particles;
+		weights.push_back(1.0/num_particles);
 	}
 
 	is_initialized = true;
@@ -94,9 +95,9 @@ void ParticleFilter::prediction(double delta_t, double std_pos[], double velocit
 			particles[i].theta += yaw_rate * delta_t;// + distribution_theta(generator);
 		}
 		for (int i = 0; i < num_particles; i++) {
-			//particles[i].x += distribution_x(generator);
-			//particles[i].y += distribution_y(generator);
-			//particles[i].theta += distribution_theta(generator);
+			particles[i].x = particles[i].x + distribution_x(generator);
+			particles[i].y = particles[i].y + distribution_y(generator);
+			particles[i].theta = particles[i].theta +  distribution_theta(generator);
 		}
 	}
 
@@ -122,15 +123,27 @@ void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::ve
 	double distance, temp_distance;
 	for (int i = 0; i < observations.size(); i++) {
 		int current_match = 0;
-		distance, temp_distance = 300;
+		distance = 500.0;
+		temp_distance = 500.0;
+		cout << "Distance: " << distance << endl;
+		cout<< i << endl;
 		for (int j = 0; j < predicted.size(); j++) {
-			temp_distance = sqrt(pow(observations[i].x - predicted[j].x, 2.0)
-										+ pow(observations[i].y - predicted[j].y, 2.0));
+
+			cout << "(" << temp_distance << ", " << distance << ")" << endl;
+
+			temp_distance = dist(observations[i].x,
+													 observations[i].y,
+													 predicted[j].x,
+													 predicted[j].y);
+			cout << "(" << temp_distance << ", " << distance << ")" << endl;
 			if (temp_distance < distance) {
-				current_match = j;
+				current_match = predicted[j].id - 1;
+				distance = temp_distance;
 			}
 		}
-		observations[i].id = predicted[current_match].id - 1;
+		cout << "test" << endl;
+		observations[i].id = current_match;
+		cout << observations[i].id << endl;
 		//predicted.erase(predicted.begin() + current_match);
 	}
 
@@ -161,13 +174,27 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 	std::vector<LandmarkObs> car_observations;// Make a list of landmarks from the map to pass to dataAssociation.
 	std::vector<LandmarkObs> map_observations;
   for (int i = 0; i < num_particles; i++) {
+		double s = 1.0;
 		// For every particle, convert the observed landmarks to map space.
 		car_observations.clear();
 		map_observations.clear();
+
+		for (int j = 0; j < map_landmarks.landmark_list.size(); j++) {
+			distance = dist(particles[i].x, particles[i].y,
+											map_landmarks.landmark_list[j].x_f,
+											map_landmarks.landmark_list[j].y_f);
+			if (distance < sensor_range) {
+				map_observations.push_back(LandmarkObs());
+				map_observations.back().id = map_landmarks.landmark_list[j].id_i;
+				map_observations.back().x = map_landmarks.landmark_list[j].x_f;
+				map_observations.back().y = map_landmarks.landmark_list[j].y_f;
+			}
+		}
+
 		for (int j = 0; j < observations.size(); j++) {
 			car_observations.push_back(LandmarkObs());
-
-			car_observations[j].x = particles[i].x;
+			// TODO: IS THIS THE ISSUE?
+			car_observations[j].x = particles[i].x
 															+ (cos(particles[i].theta) * observations[j].x)
 															- (sin(particles[i].theta) * observations[j].y);
 
@@ -176,27 +203,17 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 															+ (cos(particles[i].theta) * observations[j].y);
 		}
 
-		for (int j = 0; j < map_landmarks.landmark_list.size(); j++) {
-			distance = sqrt(pow(map_landmarks.landmark_list[j].x_f
-													- particles[i].x, 2.0)
-										+ pow(map_landmarks.landmark_list[j].y_f
-													- particles[i].y, 2.0));
-			if (distance < sensor_range) {
-				map_observations.push_back(LandmarkObs());
-				map_observations.back().id = map_landmarks.landmark_list[j].id_i;
-				map_observations.back().x = map_landmarks.landmark_list[j].x_f;
-				map_observations.back().y = map_landmarks.landmark_list[j].y_f;
-			}
-		}
+
 		// Associate landmarks with observations.
 		if (map_observations.size() < car_observations.size()) {
-			weights.push_back(0.0);
+			s = 0.0;
 		} else {
 			dataAssociation(map_observations, car_observations);
 
 			// Calculate the particle's final weight.
-			double s = 1.0;
+
 			for (int j = 0; j < car_observations.size(); j++) {
+				std:: cout << "(" << car_observations[j].x << ", " << car_observations[j].y << ") (" << map_landmarks.landmark_list[car_observations[j].id].x_f << ", " << map_landmarks.landmark_list[car_observations[j].id].y_f << ")" << endl;
 
 				gauss_norm = 1.0/(2.0 * M_PI * std_landmark[0] * std_landmark[1]);
 				expon = (pow(car_observations[j].x - map_landmarks.landmark_list[
@@ -210,10 +227,13 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 				t_val = gauss_norm * exp(-expon);
 				s *= t_val;
 
+
+				std::cout << "One observation end" << endl;
 			}
-			particles[i].weight = s;
-			weights.push_back(s);
 		}
+		particles[i].weight = s;
+		weights.push_back(s);
+		std::cout << "One particle end" << endl;
 	}
 
 
@@ -235,6 +255,7 @@ void ParticleFilter::resample() {
 		temp_vec.push_back(particles[sample]);
 	}
 	particles = temp_vec;
+	weights.clear();
 }
 
 Particle ParticleFilter::SetAssociations(Particle& particle, const std::vector<int>& associations,
@@ -244,6 +265,11 @@ Particle ParticleFilter::SetAssociations(Particle& particle, const std::vector<i
     // associations: The landmark id that goes along with each listed association
     // sense_x: the associations x mapping already converted to world coordinates
     // sense_y: the associations y mapping already converted to world coordinates
+
+		particle.associations.clear();
+		particle.sense_x.clear();
+		particle.sense_y.clear();
+
 
     particle.associations= associations;
     particle.sense_x = sense_x;
